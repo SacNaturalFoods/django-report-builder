@@ -347,7 +347,7 @@ def report_to_list(report, user, preview=False):
         objects = objects[:50]
     
     # Display Values
-    values_list = []
+    display_field_list = []
     custom_list = {}
     property_list = {}
     for i, display_field in enumerate(report.displayfield_set.all()):
@@ -360,24 +360,24 @@ def report_to_list(report, user, preview=False):
             elif '[custom' in display_field.field_verbose:
                 custom_list[i] = display_field.path + display_field.field
             elif display_field.aggregate == "Avg":
-                values_list += [display_field.path + display_field.field + '__ave']
+                display_field_list += [display_field.path + display_field.field + '__ave']
             elif display_field.aggregate == "Max":
-                values_list += [display_field.path + display_field.field + '__max']
+                display_field_list += [display_field.path + display_field.field + '__max']
             elif display_field.aggregate == "Min":
-                values_list += [display_field.path + display_field.field + '__min']
+                display_field_list += [display_field.path + display_field.field + '__min']
             elif display_field.aggregate == "Count":
-                values_list += [display_field.path + display_field.field + '__count']
+                display_field_list += [display_field.path + display_field.field + '__count']
             elif display_field.aggregate == "Sum":
-                values_list += [display_field.path + display_field.field + '__sum']
+                display_field_list += [display_field.path + display_field.field + '__sum']
             else:
-                values_list += [display_field.path + display_field.field]
+                display_field_list += [display_field.path + display_field.field]
         else:
             message += "You don't have permission to " + display_field.name
     try:
         if user.has_perm(report.root_model.app_label + '.change_' + report.root_model.model) \
         or user.has_perm(report.root_model.app_label + '.view_' + report.root_model.model):
             objects_list = []
-            # need to get values_list in order to traverse relations and get aggregates
+            # need to get display_field_list in order to traverse relations and get aggregates
             # need objects for properties
             property_filters = {} 
             for property_filter in report.filterfield_set.filter(field_verbose__contains='[property]'):
@@ -385,48 +385,50 @@ def report_to_list(report, user, preview=False):
             
             if property_list:
                 # we'll need this later
-                values_list = ['pk'] + values_list
+                display_field_list = ['pk'] + display_field_list
             
-            objects_list = list(objects.values_list(*values_list))
+            values_list = list(objects.values_list(*display_field_list))
             
             if property_list: 
-                for i, obj in enumerate(distinct_objects):
+                for row in values_list:
                     
                     remove_row = False
                     for position, display_property in property_list.iteritems(): 
                         val = reduce(getattr, display_property.split('__'), obj)
                         pf = property_filters.get(display_property)
-                        if pf and filter_property(objects_list, pf, val):
+                        if pf and filter_property(values_list, pf, val):
                             remove_row = True
-                        for object_i, objects_row in enumerate(objects_list):
-                            # Find all rows replated to specific object
-                            # Need this to handle multiple rows even if they are out of order
-                            if objects_row[0] == obj.pk:
-                                new_row = list(objects_row)
-                                new_row.insert(position+1, val)
-                                # If it is None then it was already marked for deletion
-                                if not remove_row and objects_list[object_i] != (None,):
-                                    objects_list[object_i] = tuple(new_row)
-                                else:
-                                    # Mark for deletion by setting to None, yea a bit lazy
-                                    objects_list[object_i] = (None,)
+                        #for object_i, objects_row in enumerate(values_list):
+                        #    # Find all rows replated to specific object
+                        #    # Need this to handle multiple rows even if they are out of order
+                        #    if objects_row[0] == obj.pk:
+                        #        new_row = list(objects_row)
+                        #        new_row.insert(position+1, val)
+                        #        # If it is None then it was already marked for deletion
+                        #        if not remove_row and values_list[object_i] != (None,):
+                        #            values_list[object_i] = tuple(new_row)
+                        #        else:
+                        #            # Mark for deletion by setting to None, yea a bit lazy
+                        #            values_list[object_i] = (None,)
+
+
                 
                 # now remove the pk we had to add before
-                for obj_i, obj in enumerate(objects_list):
-                    objects_list[obj_i] = list(obj)
-                for obj in objects_list:
+                for obj_i, obj in enumerate(values_list):
+                    values_list[obj_i] = list(obj)
+                for obj in values_list:
                     obj.pop(0)
                     
         else:
-            objects_list = []
+            values_list = []
             message = "Permission Denied on %s" % report.root_model.name
     except exceptions.FieldError:
         message += "Field Error. If you are using the report builder then you found a bug!"
         message += "If you made this in admin, then you probably did something wrong."
-        objects_list = None
+        values_list = None
 
     
-    return objects_list, message
+    return values_list, message
     
 @staff_member_required
 def ajax_preview(request):
